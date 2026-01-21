@@ -1,7 +1,7 @@
 # helper: source if readable, otherwise print a short message
 safe_source() {
   if [ -r "$1" ]; then
-    . "$1"
+    . "$1" > /dev/null 2>&1
   else
     printf 'Skipping: %s not found\n' "$1"
   fi
@@ -10,6 +10,7 @@ safe_source() {
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
+typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
 safe_source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 
 # If you come from bash you might have to change your $PATH.
