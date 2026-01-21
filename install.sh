@@ -105,6 +105,33 @@ else
   echo "zsh already installed"
 fi
 
+# Prompt user to make zsh the default login shell
+if command -v zsh >/dev/null 2>&1; then
+  if command -v chsh >/dev/null 2>&1; then
+    read -r -p "Make zsh your default shell? [y/N] " _ans
+    case "$_ans" in
+      [Yy]|[Yy][Ee][Ss])
+        echo "Changing default shell to zsh for $USER..."
+        if chsh -s "$(command -v zsh)" "$USER"; then
+          echo "Default shell changed to zsh for $USER"
+        else
+          echo "First attempt failed; attempting with sudo (may prompt for password)"
+          if sudo chsh -s "$(command -v zsh)" "$USER"; then
+            echo "Default shell changed to zsh for $USER (via sudo)"
+          else
+            echo "Failed to change default shell. You can run: chsh -s \"$(command -v zsh)\" $USER"
+          fi
+        fi
+        ;;
+      *)
+        echo "Keeping current default shell."
+        ;;
+    esac
+  else
+    echo "chsh not available; cannot change default shell automatically"
+  fi
+fi
+
 # Install Oh My Zsh if missing (non-interactive: don't auto-run zsh or chsh)
 if [[ -d "$HOME/.oh-my-zsh" ]]; then
   echo "Oh My Zsh already installed"
@@ -140,3 +167,8 @@ else
 fi
 
 echo "Installation steps completed. To apply changes, open a new shell or run: source $HOME/.zshrc"
+
+# Ensure user-local zsh file exists (create only if missing)
+if [ ! -e "$HOME/.local.zsh" ]; then
+  touch "$HOME/.local.zsh"
+fi
