@@ -5,7 +5,7 @@ Minimal, modular dotfiles for Ubuntu / WSL-style environments.
 **Quick start**
 - Clone to `~/dotfiles` (recommended):
 ```bash
-git clone git@github.com:youruser/dotfiles.git ~/dotfiles
+git clone git@github.com:dxmarch/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 ```
 - Run the installer (non-interactive where possible):
