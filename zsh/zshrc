@@ -130,3 +130,5 @@ safe_source "$HOME/.p10k.zsh"
 safe_source "$HOME/.fzf.zsh"
 # Add your local config 
 safe_source "$HOME/.local.zsh"
+
+alias fd=fdfind

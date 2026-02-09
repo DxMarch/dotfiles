@@ -65,13 +65,55 @@ clone_github_repo() {
     git clone "https://github.com/$repo.git" "$dest"
 }
 
-ensure_command() {
-  local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "Missing command: $cmd"
-    return 1
+######################################
+# Basic utilities and useful programs
+######################################
+
+# Command -> package mapping.
+# This ensures we install the correct package name for a given command.
+# For example, the command 'fdfind' is provided by the package 'fd-find' on Debian/Ubuntu.
+declare -A CMD_PKG_MAP=(
+  [git]=git
+  [curl]=curl
+  [zsh]=zsh
+  [tmux]=tmux
+  [htop]=htop
+  [fdfind]=fd-find
+)
+
+# Ensure apt-get is available unless the user explicitly wants to skip package installs
+if ! command -v apt-get >/dev/null 2>&1; then
+  if [[ "${SKIP_PACKAGE_INSTALL:-}" = "1" ]]; then
+    echo "Warning: apt-get not found; skipping package installs"
+  else
+    echo "Error: apt-get not found. Set SKIP_PACKAGE_INSTALL=1 to skip installs."
+    exit 1
   fi
-}
+else
+  # Check which commands are missing and identify needed packages
+  pkgs_to_install=()
+  for cmd in "${!CMD_PKG_MAP[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      pkgs_to_install+=("${CMD_PKG_MAP[$cmd]}")
+    fi
+  done
+
+  # Install missing packages if any
+  if [ ${#pkgs_to_install[@]} -gt 0 ]; then
+    echo "Updating apt cache"
+    sudo apt-get update -y
+
+    # dedupe package list to avoid installing the same package multiple times
+    IFS=$'\n' read -r -d '' -a unique_pkgs < <(printf "%s\n" "${pkgs_to_install[@]}" | awk '!seen[$0]++' && printf '\0')
+
+    echo "Installing packages: ${unique_pkgs[*]}"
+    if ! sudo apt-get install -y "${unique_pkgs[@]}"; then
+      echo "Warning: apt-get install failed; continuing"
+    fi
+  else
+    echo "All required commands present"
+  fi
+fi
 
 #################################
 # Zsh install and setup
@@ -84,52 +126,27 @@ link "$DOTFILES_DIR/zsh/zshrc" "$HOME/.zshrc"
 link "$DOTFILES_DIR/zsh/p10k.zsh" "$HOME/.p10k.zsh"
 link "$DOTFILES_DIR/gitconfig" "$HOME/.gitconfig"
 
-# Ensure basic system commands are available (or install via apt)
-if command -v apt-get >/dev/null 2>&1; then
-  echo "Updating apt cache and ensuring prerequisites (git, curl) are installed"
-  sudo apt-get update -y
-  sudo apt-get install -y git curl
-else
-  echo "apt-get not available; please ensure git and curl are installed before running this script"
-fi
-
-# Install zsh if missing
-if ! command -v zsh >/dev/null 2>&1; then
-  if command -v apt-get >/dev/null 2>&1; then
-    echo "Installing zsh"
-    sudo apt-get install -y zsh
-  else
-    echo "zsh not found and apt-get unavailable; please install zsh manually"
-  fi
-else
-  echo "zsh already installed"
-fi
-
 # Prompt user to make zsh the default login shell
-if command -v zsh >/dev/null 2>&1; then
-  if command -v chsh >/dev/null 2>&1; then
-    read -r -p "Make zsh your default shell? [y/N] " _ans
-    case "$_ans" in
-      [Yy]|[Yy][Ee][Ss])
-        echo "Changing default shell to zsh for $USER..."
-        if chsh -s "$(command -v zsh)" "$USER"; then
-          echo "Default shell changed to zsh for $USER"
-        else
-          echo "First attempt failed; attempting with sudo (may prompt for password)"
-          if sudo chsh -s "$(command -v zsh)" "$USER"; then
-            echo "Default shell changed to zsh for $USER (via sudo)"
-          else
-            echo "Failed to change default shell. You can run: chsh -s \"$(command -v zsh)\" $USER"
+# Only prompt if current shell isn't already zsh or if SHELL doesn't match zsh path
+if [[ "$SHELL" != "$(command -v zsh)" ]]; then
+    if command -v chsh >/dev/null 2>&1; then
+      read -r -p "Make zsh your default shell? [y/N] " _ans
+      case "$_ans" in
+        [Yy]|[Yy][Ee][Ss])
+          echo "Changing default shell to zsh for $USER..."
+          # Try generic chsh first, fall back to sudo if needed
+          if ! chsh -s "$(command -v zsh)" "$USER"; then
+            echo "Standard chsh failed; attempting with sudo..."
+            sudo chsh -s "$(command -v zsh)" "$USER"
           fi
-        fi
-        ;;
-      *)
-        echo "Keeping current default shell."
-        ;;
-    esac
-  else
-    echo "chsh not available; cannot change default shell automatically"
-  fi
+          ;;
+        *) echo "Skipping shell change." ;;
+      esac
+    else
+      echo "Warning: 'chsh' not found; cannot change default shell automatically."
+    fi
+else
+  echo "zsh is already the default shell."
 fi
 
 # Install Oh My Zsh if missing (non-interactive: don't auto-run zsh or chsh)
