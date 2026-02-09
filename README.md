@@ -20,6 +20,7 @@ bash install.sh
 
 **Configuration**
 - `ZSH_CUSTOM` can be set to change the Oh My Zsh custom path.
+- Custom `zhs` options can be added to `.local.zhs`
 
 **Notes & tips**
 - The script is idempotent: it backs up existing files (timestamped `.bak`), and avoids re-cloning git repos.
