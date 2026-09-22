@@ -131,4 +131,6 @@ safe_source "$HOME/.fzf.zsh"
 # Add your local config 
 safe_source "$HOME/.local.zsh"
 
-alias fd=fdfind
+if command -v fdfind >/dev/null 2>&1; then
+  alias fd=fdfind
+fi

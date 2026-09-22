@@ -30,7 +30,17 @@ link() {
 
   # If destination is a symlink pointing elsewhere, replace it
   if [[ -L "$dest" ]]; then
-    if [[ "$(readlink -f "$dest")" != "$src_abs" ]]; then
+    local dest_target
+    if dest_target="$(readlink -f "$dest" 2>/dev/null)"; then
+      :
+    else
+      dest_target="$(readlink "$dest")"
+      if [[ "$dest_target" != /* ]]; then
+        dest_target="$(cd "$(dirname "$dest")" && pwd -P)/$dest_target"
+      fi
+    fi
+
+    if [[ "$dest_target" != "$src_abs" ]]; then
       echo "Replacing symlink $dest → $src_abs"
       rm -f "$dest"
     else
@@ -69,46 +79,47 @@ clone_github_repo() {
 # Basic utilities and useful programs
 ######################################
 
-# Command -> package mapping.
-# This ensures we install the correct package name for a given command.
-# For example, the command 'fdfind' is provided by the package 'fd-find' on Debian/Ubuntu.
-declare -A CMD_PKG_MAP=(
-  [git]=git
-  [curl]=curl
-  [zsh]=zsh
-  [tmux]=tmux
-  [htop]=htop
-  [fdfind]=fd-find
-)
-
-# Ensure apt-get is available unless the user explicitly wants to skip package installs
-if ! command -v apt-get >/dev/null 2>&1; then
-  if [[ "${SKIP_PACKAGE_INSTALL:-}" = "1" ]]; then
-    echo "Warning: apt-get not found; skipping package installs"
-  else
-    echo "Error: apt-get not found. Set SKIP_PACKAGE_INSTALL=1 to skip installs."
+# Select the platform-specific package manager and command/package mapping.
+# Indexed arrays keep this compatible with macOS's default Bash 3.2.
+case "$(uname -s)" in
+  Linux)
+    PACKAGE_MANAGER="apt-get"
+    REQUIRED_COMMANDS=(git curl zsh tmux htop fdfind)
+    REQUIRED_PACKAGES=(git curl zsh tmux htop fd-find)
+    ;;
+  Darwin)
+    PACKAGE_MANAGER="brew"
+    REQUIRED_COMMANDS=(git curl zsh tmux htop fd)
+    REQUIRED_PACKAGES=(git curl zsh tmux htop fd)
+    ;;
+  *)
+    echo "Error: unsupported operating system: $(uname -s)"
     exit 1
-  fi
+    ;;
+esac
+
+if [[ "${SKIP_PACKAGE_INSTALL:-}" = "1" ]]; then
+  echo "Skipping package installs because SKIP_PACKAGE_INSTALL=1"
+elif ! command -v "$PACKAGE_MANAGER" >/dev/null 2>&1; then
+  echo "Error: $PACKAGE_MANAGER not found. Install it or set SKIP_PACKAGE_INSTALL=1 to skip installs."
+  exit 1
 else
-  # Check which commands are missing and identify needed packages
   pkgs_to_install=()
-  for cmd in "${!CMD_PKG_MAP[@]}"; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      pkgs_to_install+=("${CMD_PKG_MAP[$cmd]}")
+  for index in "${!REQUIRED_COMMANDS[@]}"; do
+    if ! command -v "${REQUIRED_COMMANDS[$index]}" >/dev/null 2>&1; then
+      pkgs_to_install+=("${REQUIRED_PACKAGES[$index]}")
     fi
   done
 
-  # Install missing packages if any
-  if [ ${#pkgs_to_install[@]} -gt 0 ]; then
-    echo "Updating apt cache"
-    sudo apt-get update -y
-
-    # dedupe package list to avoid installing the same package multiple times
-    IFS=$'\n' read -r -d '' -a unique_pkgs < <(printf "%s\n" "${pkgs_to_install[@]}" | awk '!seen[$0]++' && printf '\0')
-
-    echo "Installing packages: ${unique_pkgs[*]}"
-    if ! sudo apt-get install -y "${unique_pkgs[@]}"; then
-      echo "Warning: apt-get install failed; continuing"
+  if [[ ${#pkgs_to_install[@]} -gt 0 ]]; then
+    if [[ "$PACKAGE_MANAGER" = "apt-get" ]]; then
+      echo "Updating apt cache"
+      sudo apt-get update -y
+      echo "Installing packages: ${pkgs_to_install[*]}"
+      sudo apt-get install -y "${pkgs_to_install[@]}"
+    else
+      echo "Installing packages: ${pkgs_to_install[*]}"
+      brew install "${pkgs_to_install[@]}"
     fi
   else
     echo "All required commands present"
@@ -175,12 +186,20 @@ install_omz_plugin zsh-users/zsh-autosuggestions zsh-autosuggestions
 install_omz_plugin zsh-users/zsh-syntax-highlighting zsh-syntax-highlighting
 install_omz_plugin zsh-users/zsh-history-substring-search zsh-history-substring-search
 
-# fzf is optional — clone but do not run interactive installer automatically
+# fzf is optional — clone it and install its shell integration without editing ~/.zshrc
 if [[ -d "$HOME/.fzf" ]]; then
   echo "fzf already cloned"
 else
   clone_github_repo junegunn/fzf "$HOME/.fzf" || true
-  echo "To finish fzf setup, run: $HOME/.fzf/install (you can pass --all for non-interactive install)"
+fi
+
+if [[ -x "$HOME/.fzf/install" && ! -e "$HOME/.fzf.zsh" ]]; then
+  echo "Installing fzf shell integration"
+  "$HOME/.fzf/install" --all --no-update-rc
+fi
+
+if [[ ! -e "$HOME/.fzf.zsh" ]]; then
+  echo "Warning: fzf shell integration was not installed; run $HOME/.fzf/install --all manually"
 fi
 
 echo "Installation steps completed. To apply changes, open a new shell or run: source $HOME/.zshrc"
